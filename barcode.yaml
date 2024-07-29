@@ -49,10 +49,6 @@ api:
         - script.execute:
             id: request_ean
             ean: !lambda return eancode.c_str();
-
-wifi:
-  ap:
-    password: "12345678"
     
 improv_serial:
 
