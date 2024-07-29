@@ -34,7 +34,7 @@ esphome:
       - lambda: id(last_ean).publish_state("Scan Barcode");
 
 dashboard_import:
-  package_import_url: github://earwiged/barcode-scanner-for-esphome/barcode.yaml@main
+  package_import_url: github://SmartHome-yourself/barcode-scanner-for-esphome/barcode.yaml@main
   import_full_config: false
 
 ota:
@@ -76,6 +76,9 @@ globals:
   - id: inactivity_timer
     type: int
     initial_value: "0"
+  - id: display_on
+    type: bool
+    initial_value: "true"
 
 text_sensor:
   - platform: template
@@ -92,7 +95,11 @@ text_sensor:
                   ean: !lambda return x.c_str();
               - lambda: |-
                   id(inactivity_timer) = 0;
-              - display.turn_on: oled_display
+                  if (!id(display_on)) {
+                    id(display_on) = true;
+                    // Turn on the display
+                    id(oled_display).set_power(true);
+                  }
 
   - platform: template
     id: last_ean
@@ -181,7 +188,11 @@ interval:
           id(inactivity_timer) += 1;
           if (id(inactivity_timer) >= 2) {
             id(inactivity_timer) = 2;  // Cap the timer to prevent overflow
-            id(oled_display).turn_off();
+            if (id(display_on)) {
+              id(display_on) = false;
+              // Turn off the display
+              id(oled_display).set_power(false);
+            }
           }
 
 switch:
