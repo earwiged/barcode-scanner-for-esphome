@@ -34,7 +34,7 @@ esphome:
       - lambda: id(last_ean).publish_state("Scan Barcode");
 
 dashboard_import:
-  package_import_url: github://SmartHome-yourself/barcode-scanner-for-esphome/barcode.yaml@main
+  package_import_url: github://earwiged/barcode-scanner-for-esphome/barcode.yaml@main
   import_full_config: false
 
 ota:
@@ -73,6 +73,9 @@ globals:
   - id: xpos_prod
     type: int
     initial_value: "0"
+  - id: inactivity_timer
+    type: int
+    initial_value: "0"
 
 text_sensor:
   - platform: template
@@ -87,6 +90,9 @@ text_sensor:
               - script.execute: 
                   id: request_ean
                   ean: !lambda return x.c_str();
+              - lambda: |-
+                  id(inactivity_timer) = 0;
+              - display.turn_on: oled_display
 
   - platform: template
     id: last_ean
@@ -97,7 +103,6 @@ text_sensor:
   - platform: template
     id: last_product
     name: "${friendly_name} Product"
-
 
 uart:
   id: uart_bus
@@ -116,7 +121,6 @@ uart:
           state: !lambda |
             std::string s(bytes.begin(), bytes.end());
             return s;
-
 
 font:
   - file: "_fonts/arial.ttf"
@@ -140,6 +144,7 @@ display:
     model: "SSD1306 128x64"
     address: "${ssd1306_i2c_address}"
     update_interval: 250ms
+    id: oled_display
     lambda: |-
       it.print(id(xpos_ean), 0, id(arial_font_18), id(last_ean).state.c_str());
       it.print(id(xpos_brand), 19, id(arial_font), id(last_brand).state.c_str());
@@ -168,7 +173,16 @@ display:
         id(xpos_prod) -= 10;
       } else {
         id(xpos_prod) = 0;
-      }
+
+interval:
+  - interval: 1min
+    then:
+      - lambda: |-
+          id(inactivity_timer) += 1;
+          if (id(inactivity_timer) >= 2) {
+            id(inactivity_timer) = 2;  // Cap the timer to prevent overflow
+            id(oled_display).turn_off();
+          }
 
 switch:
   - platform: gpio
@@ -235,7 +249,6 @@ script:
       - delay: 10s
       - script.execute: clearProductData
       - lambda: id(last_ean).publish_state("Scan Barcode");
-
 
   - id: clearProductData
     mode: restart
