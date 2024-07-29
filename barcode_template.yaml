@@ -73,6 +73,12 @@ globals:
   - id: xpos_prod
     type: int
     initial_value: "0"
+  - id: inactivity_timer
+    type: int
+    initial_value: "0"
+  - id: display_on
+    type: bool
+    initial_value: "true"
 
 text_sensor:
   - platform: template
@@ -84,9 +90,14 @@ text_sensor:
             condition:
               - lambda: 'return id(barcode_scanner).state != "unknown";'
             then:
-              - script.execute: 
+              - script.execute:
                   id: request_ean
                   ean: !lambda return x.c_str();
+              - lambda: |-
+                  id(inactivity_timer) = 0;
+                  if (!id(display_on)) {
+                    id(display_on) = true;
+                  }
 
   - platform: template
     id: last_ean
@@ -97,7 +108,6 @@ text_sensor:
   - platform: template
     id: last_product
     name: "${friendly_name} Product"
-
 
 uart:
   id: uart_bus
@@ -117,13 +127,12 @@ uart:
             std::string s(bytes.begin(), bytes.end());
             return s;
 
-
 font:
-  - file: "gfonts://Roboto"
-    id: roboto_18
+  - file: "_fonts/arial.ttf"
+    id: arial_font_18
     size: 18
-  - file: "gfonts://Roboto"
-    id: roboto_20
+  - file: "_fonts/arial.ttf"
+    id: arial_font
     size: 20
     glyphs:  |
       ß!?"%()+*=,-_.:°ø0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZÄÜÖ abcdefghijklmnopqrstuvwxyzäüö€@<>/
@@ -140,35 +149,52 @@ display:
     model: "SSD1306 128x64"
     address: "${ssd1306_i2c_address}"
     update_interval: 250ms
+    id: oled_display
     lambda: |-
-      it.print(id(xpos_ean), 0, id(arial_font_18), id(last_ean).state.c_str());
-      it.print(id(xpos_brand), 19, id(arial_font), id(last_brand).state.c_str());
-      it.print(id(xpos_prod), 40, id(arial_font), id(last_product).state.c_str());
+      if (id(display_on)) {
+        it.print(id(xpos_ean), 0, id(arial_font_18), id(last_ean).state.c_str());
+        it.print(id(xpos_brand), 19, id(arial_font), id(last_brand).state.c_str());
+        it.print(id(xpos_prod), 40, id(arial_font), id(last_product).state.c_str());
 
-      int x_start, y_start, height;
-      int brand_width, prod_width, ean_width;
-      it.get_text_bounds(0, 0, id(last_ean).state.c_str(), id(arial_font), TextAlign::TOP_LEFT, &x_start, &y_start, &ean_width, &height);
-      it.get_text_bounds(0, 0, id(last_brand).state.c_str(), id(arial_font), TextAlign::TOP_LEFT, &x_start, &y_start, &brand_width, &height);
-      it.get_text_bounds(0, 0, id(last_product).state.c_str(), id(arial_font), TextAlign::TOP_LEFT, &x_start, &y_start, &prod_width, &height);
+        int x_start, y_start, height;
+        int brand_width, prod_width, ean_width;
+        it.get_text_bounds(0, 0, id(last_ean).state.c_str(), id(arial_font), TextAlign::TOP_LEFT, &x_start, &y_start, &ean_width, &height);
+        it.get_text_bounds(0, 0, id(last_brand).state.c_str(), id(arial_font), TextAlign::TOP_LEFT, &x_start, &y_start, &brand_width, &height);
+        it.get_text_bounds(0, 0, id(last_product).state.c_str(), id(arial_font), TextAlign::TOP_LEFT, &x_start, &y_start, &prod_width, &height);
 
-      if (id(xpos_ean) > (-1*ean_width)-30 && ean_width>128) {
-        id(xpos_ean) -= 10;
+        if (id(xpos_ean) > (-1*ean_width)-30 && ean_width>128) {
+          id(xpos_ean) -= 10;
+        } else {
+          id(xpos_ean) = 0;
+        }
+
+        if (id(xpos_brand) > (-1*brand_width)-30 && brand_width>128) {
+          id(xpos_brand) -= 10;
+        } else {
+          id(xpos_brand) = 0;
+        }
+
+        int prod_len = strlen(id(last_product).state.c_str());
+        if (id(xpos_prod) > (-1*prod_width)-30 && prod_width>128) {
+          id(xpos_prod) -= 10;
+        } else {
+          id(xpos_prod) = 0;
+        }
       } else {
-        id(xpos_ean) = 0;
+        it.clear();
       }
 
-      if (id(xpos_brand) > (-1*brand_width)-30 && brand_width>128) {
-        id(xpos_brand) -= 10;
-      } else {
-        id(xpos_brand) = 0;
-      }
-
-      int prod_len = strlen(id(last_product).state.c_str());
-      if (id(xpos_prod) > (-1*prod_width)-30 && prod_width>128) {
-        id(xpos_prod) -= 10;
-      } else {
-        id(xpos_prod) = 0;
-      }
+interval:
+  - interval: 1min
+    then:
+      - lambda: |-
+          id(inactivity_timer) += 1;
+          if (id(inactivity_timer) >= 2) {
+            id(inactivity_timer) = 2;  // Cap the timer to prevent overflow
+            if (id(display_on)) {
+              id(display_on) = false;
+            }
+          }
 
 switch:
   - platform: gpio
@@ -191,7 +217,7 @@ script:
       - switch.turn_on: beeper
       - delay: 50ms
       - switch.turn_off: beeper
-      - script.execute: 
+      - script.execute:
           id: getEanData
           ean: !lambda return ean.c_str();
       - delay: 500ms
@@ -208,7 +234,7 @@ script:
       - lambda: |-
           ESP_LOGD("getEanData", "Scanned EAN: %s\n", ean);
       - lambda: id(last_ean).publish_state(ean);
-      - script.execute: 
+      - script.execute:
           id: refreshProductNameUPCItemDB
           ean: !lambda return ean.c_str();
       - lambda: |-
@@ -235,7 +261,6 @@ script:
       - delay: 10s
       - script.execute: clearProductData
       - lambda: id(last_ean).publish_state("Scan Barcode");
-
 
   - id: clearProductData
     mode: restart
