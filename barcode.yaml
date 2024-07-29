@@ -48,7 +48,7 @@ api:
       then:
         - script.execute:
             id: request_ean
-            ean: !lambda return eancode.c_str();
+            ean: !lambda return eancode.c_str()
 
 wifi:
   ap:
