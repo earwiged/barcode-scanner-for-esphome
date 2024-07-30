@@ -16,6 +16,13 @@ substitutions:
   # Pin des Buzzer/Beeper
   beeper_pin: GPIO16
 
+packages:
+  smarthomeyourself.barcodescanner: github://earwiged/barcode-scanner-for-esphome/barcode.yaml@main
+  
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
 esp32:
   board: wemos_d1_mini32
 
@@ -34,13 +41,15 @@ esphome:
       - lambda: id(last_ean).publish_state("Scan Barcode");
 
 dashboard_import:
-  package_import_url: github://earwiged/barcode-scanner-for-esphome/barcode.yaml@main
+  package_import_url: github://SmartHome-yourself/barcode-scanner-for-esphome/barcode.yaml@main
   import_full_config: false
 
 ota:
   - platform: esphome
 
 api:
+  encryption:
+    key: mpwPWeX7kTlXeibRHrDRj1AxSaGWq7Q1kmwbC3oN/pY=
   services:
     - service: request_ean
       variables:
@@ -51,8 +60,8 @@ api:
             ean: !lambda return eancode.c_str();
 
 wifi:
-  ap:
-    password: "12345678"
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
     
 improv_serial:
 
@@ -73,6 +82,12 @@ globals:
   - id: xpos_prod
     type: int
     initial_value: "0"
+  - id: inactivity_timer
+    type: int
+    initial_value: "0"
+  - id: display_on
+    type: bool
+    initial_value: "true"
 
 text_sensor:
   - platform: template
@@ -87,6 +102,13 @@ text_sensor:
               - script.execute: 
                   id: request_ean
                   ean: !lambda return x.c_str();
+              - lambda: |-
+                  id(inactivity_timer) = 0;
+                  if (!id(display_on)) {
+                    id(display_on) = true;
+                    // Turn on the display
+                    id(oled_display).set_power(true);
+                  }
 
   - platform: template
     id: last_ean
@@ -97,7 +119,6 @@ text_sensor:
   - platform: template
     id: last_product
     name: "${friendly_name} Product"
-
 
 uart:
   id: uart_bus
@@ -116,7 +137,6 @@ uart:
           state: !lambda |
             std::string s(bytes.begin(), bytes.end());
             return s;
-
 
 font:
   - file: "gfonts://Roboto"
@@ -140,6 +160,7 @@ display:
     model: "SSD1306 128x64"
     address: "${ssd1306_i2c_address}"
     update_interval: 250ms
+    id: oled_display
     lambda: |-
       it.print(id(xpos_ean), 0, id(arial_font_18), id(last_ean).state.c_str());
       it.print(id(xpos_brand), 19, id(arial_font), id(last_brand).state.c_str());
@@ -168,7 +189,20 @@ display:
         id(xpos_prod) -= 10;
       } else {
         id(xpos_prod) = 0;
-      }
+
+interval:
+  - interval: 1min
+    then:
+      - lambda: |-
+          id(inactivity_timer) += 1;
+          if (id(inactivity_timer) >= 2) {
+            id(inactivity_timer) = 2;  // Cap the timer to prevent overflow
+            if (id(display_on)) {
+              id(display_on) = false;
+              // Turn off the display
+              id(oled_display).set_power(false);
+            }
+          }
 
 switch:
   - platform: gpio
@@ -235,7 +269,6 @@ script:
       - delay: 10s
       - script.execute: clearProductData
       - lambda: id(last_ean).publish_state("Scan Barcode");
-
 
   - id: clearProductData
     mode: restart
