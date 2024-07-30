@@ -16,13 +16,6 @@ substitutions:
   # Pin des Buzzer/Beeper
   beeper_pin: GPIO16
 
-packages:
-  smarthomeyourself.barcodescanner: github://earwiged/barcode-scanner-for-esphome/barcode.yaml@main
-  
-wifi:
-  ssid: !secret wifi_ssid
-  password: !secret wifi_password
-
 esp32:
   board: wemos_d1_mini32
 
