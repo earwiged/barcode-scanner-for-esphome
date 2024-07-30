@@ -1,30 +1,17 @@
+---
 substitutions:
-  name: "barcode-scanner"
-  friendly_name: "Barcode Scanner"
-
-  # I2C-Pins fürs Display
+  name: barcode-scanner
+  friendly_name: Barcode Scanner
   display_i2c_sda: GPIO21
   display_i2c_scl: GPIO22
-
-  # I2C-Adresse des OLED Displays
   ssd1306_i2c_address: "0x3C"
-
-  # UART-Pins für den Barcode-Scanner
   uart_tx_pin: GPIO09
   uart_rx_pin: GPIO10
-
-  # Pin des Buzzer/Beeper
   beeper_pin: GPIO16
-
 esp32:
   board: wemos_d1_mini32
-
-# ----------------------------------
-# ----       CONFIG END         ----
-# ----------------------------------
-
 esphome:
-  name: "${name}"
+  name: ${name}
   name_add_mac_suffix: true
   project:
     name: smarthomeyourself.barcodescanner
@@ -32,14 +19,11 @@ esphome:
   on_boot:
     then:
       - lambda: id(last_ean).publish_state("Scan Barcode");
-
 dashboard_import:
   package_import_url: github://earwiged/barcode-scanner-for-esphome/barcode.yaml@main
   import_full_config: false
-
 ota:
   - platform: esphome
-
 api:
   encryption:
     key: mpwPWeX7kTlXeibRHrDRj1AxSaGWq7Q1kmwbC3oN/pY=
@@ -50,21 +34,14 @@ api:
       then:
         - script.execute:
             id: request_ean
-            ean: !lambda return eancode.c_str();
-
+            ean: return eancode.c_str();
 wifi:
-  ssid: !secret wifi_ssid
-  password: !secret wifi_password
-    
-improv_serial:
-
-captive_portal:
-
+  ssid: wifi_ssid
+  password: wifi_password
+improv_serial: null
+captive_portal: null
 logger:
   hardware_uart: UART0
-
-# ---------------------------------------------
-
 globals:
   - id: xpos_ean
     type: int
@@ -81,20 +58,19 @@ globals:
   - id: display_on
     type: bool
     initial_value: "true"
-
 text_sensor:
   - platform: template
     id: barcode_scanner
-    name: "${friendly_name} Sensor"
+    name: ${friendly_name} Sensor
     on_value:
       then:
         - if:
             condition:
-              - lambda: 'return id(barcode_scanner).state != "unknown";'
+              - lambda: return id(barcode_scanner).state != "unknown";
             then:
-              - script.execute: 
+              - script.execute:
                   id: request_ean
-                  ean: !lambda return x.c_str();
+                  ean: return x.c_str();
               - lambda: |-
                   id(inactivity_timer) = 0;
                   if (!id(display_on)) {
@@ -102,22 +78,20 @@ text_sensor:
                     // Turn on the display
                     id(oled_display).set_power(true);
                   }
-
   - platform: template
     id: last_ean
-    name: "${friendly_name} EAN"
+    name: ${friendly_name} EAN
   - platform: template
     id: last_brand
-    name: "${friendly_name} Brand"
+    name: ${friendly_name} Brand
   - platform: template
     id: last_product
-    name: "${friendly_name} Product"
-
+    name: ${friendly_name} Product
 uart:
   id: uart_bus
   baud_rate: 9600
-  tx_pin: "${uart_tx_pin}"
-  rx_pin: "${uart_rx_pin}"
+  tx_pin: ${uart_tx_pin}
+  rx_pin: ${uart_rx_pin}
   debug:
     direction: BOTH
     dummy_receiver: true
@@ -127,43 +101,50 @@ uart:
       - lambda: UARTDebug::log_string(direction, bytes);
       - text_sensor.template.publish:
           id: barcode_scanner
-          state: !lambda |
+          state: |
             std::string s(bytes.begin(), bytes.end());
             return s;
-
 font:
-  - file: "gfonts://Roboto"
+  - file: gfonts://Roboto
     id: roboto_18
     size: 18
-  - file: "gfonts://Roboto"
+  - file: gfonts://Roboto
     id: roboto_20
     size: 20
-    glyphs:  |
-      ß!?"%()+*=,-_.:°ø0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZÄÜÖ abcdefghijklmnopqrstuvwxyzäüö€@<>/
-
+    glyphs: >
+      ß!?"%()+*=,-_.:°ø0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZÄÜÖ
+      abcdefghijklmnopqrstuvwxyzäüö€@<>/
 i2c:
-  sda: "${display_i2c_sda}"
-  scl: "${display_i2c_scl}"
+  sda: ${display_i2c_sda}
+  scl: ${display_i2c_scl}
   scan: false
   frequency: 400kHz
   id: i2c_bus
-
 display:
   - platform: ssd1306_i2c
-    model: "SSD1306 128x64"
-    address: "${ssd1306_i2c_address}"
+    model: SSD1306 128x64
+    address: ${ssd1306_i2c_address}
     update_interval: 250ms
     id: oled_display
-    lambda: |-
-      it.print(id(xpos_ean), 0, id(arial_font_18), id(last_ean).state.c_str());
+    lambda: >-
+      it.print(id(xpos_ean), 0, id(arial_font_18),
+      id(last_ean).state.c_str());
+
       it.print(id(xpos_brand), 19, id(arial_font), id(last_brand).state.c_str());
+
       it.print(id(xpos_prod), 40, id(arial_font), id(last_product).state.c_str());
 
+
       int x_start, y_start, height;
+
       int brand_width, prod_width, ean_width;
+
       it.get_text_bounds(0, 0, id(last_ean).state.c_str(), id(arial_font), TextAlign::TOP_LEFT, &x_start, &y_start, &ean_width, &height);
+
       it.get_text_bounds(0, 0, id(last_brand).state.c_str(), id(arial_font), TextAlign::TOP_LEFT, &x_start, &y_start, &brand_width, &height);
+
       it.get_text_bounds(0, 0, id(last_product).state.c_str(), id(arial_font), TextAlign::TOP_LEFT, &x_start, &y_start, &prod_width, &height);
+
 
       if (id(xpos_ean) > (-1*ean_width)-30 && ean_width>128) {
         id(xpos_ean) -= 10;
@@ -171,18 +152,20 @@ display:
         id(xpos_ean) = 0;
       }
 
+
       if (id(xpos_brand) > (-1*brand_width)-30 && brand_width>128) {
         id(xpos_brand) -= 10;
       } else {
         id(xpos_brand) = 0;
       }
 
+
       int prod_len = strlen(id(last_product).state.c_str());
+
       if (id(xpos_prod) > (-1*prod_width)-30 && prod_width>128) {
         id(xpos_prod) -= 10;
       } else {
         id(xpos_prod) = 0;
-
 interval:
   - interval: 1min
     then:
@@ -196,19 +179,16 @@ interval:
               id(oled_display).set_power(false);
             }
           }
-
 switch:
   - platform: gpio
-    name: "${friendly_name} Buzzer"
-    pin: "${beeper_pin}"
+    name: ${friendly_name} Buzzer
+    pin: ${beeper_pin}
     id: beeper
-
 http_request:
   useragent: esphome/barcodescanner
   timeout: 10s
   id: http_request_data
   verify_ssl: false
-  
 script:
   - id: request_ean
     parameters:
@@ -218,38 +198,35 @@ script:
       - switch.turn_on: beeper
       - delay: 50ms
       - switch.turn_off: beeper
-      - script.execute: 
+      - script.execute:
           id: getEanData
-          ean: !lambda return ean.c_str();
+          ean: return ean.c_str();
       - delay: 500ms
       - text_sensor.template.publish:
           id: barcode_scanner
           state: unknown
-
   - id: getEanData
     parameters:
       ean: std::string
     mode: restart
     then:
       - script.execute: clearProductData
-      - lambda: |-
-          ESP_LOGD("getEanData", "Scanned EAN: %s\n", ean);
+      - lambda: 'ESP_LOGD("getEanData", "Scanned EAN: %s\n", ean);'
       - lambda: id(last_ean).publish_state(ean);
-      - script.execute: 
+      - script.execute:
           id: refreshProductNameUPCItemDB
-          ean: !lambda return ean.c_str();
-      - lambda: |-
-          ESP_LOGD("getEanData", "UPCItemDB result: %s\n", id(last_product).state.c_str());
-
+          ean: return ean.c_str();
+      - lambda: 'ESP_LOGD("getEanData", "UPCItemDB result: %s\n",
+          id(last_product).state.c_str());'
       - if:
           condition:
             or:
               - text_sensor.state:
                   id: last_product
-                  state: 'null'
+                  state: "null"
               - text_sensor.state:
                   id: last_product
-                  state: ''
+                  state: ""
           then:
             - switch.turn_on: beeper
             - delay: 800ms
@@ -258,18 +235,15 @@ script:
             - switch.turn_on: beeper
             - delay: 50ms
             - switch.turn_off: beeper
-
       - delay: 10s
       - script.execute: clearProductData
       - lambda: id(last_ean).publish_state("Scan Barcode");
-
   - id: clearProductData
     mode: restart
-    then: 
+    then:
       - lambda: id(last_ean).publish_state("");
       - lambda: id(last_brand).publish_state("");
       - lambda: id(last_product).publish_state("");
-      
   - id: refreshProductNameUPCItemDB
     mode: restart
     parameters:
@@ -277,12 +251,14 @@ script:
     then:
       - http_request.get:
           verify_ssl: false
-          url: !lambda |-
-                  return (std::string) "https://api.upcitemdb.com/prod/trial/lookup?upc=" + ean;
+          url: return (std::string) "https://api.upcitemdb.com/prod/trial/lookup?upc=" +
+            ean;
           on_response:
             then:
-              - lambda: |-
-                  ESP_LOGD("upcitemdb", "Response: %s\n", id(http_request_data).get_string());
+              - lambda: >-
+                  ESP_LOGD("upcitemdb", "Response: %s\n",
+                  id(http_request_data).get_string());
+
                   json::parse_json(id(http_request_data).get_string(), [](JsonObject root) {
                     std::string jsonStr;
                     id(last_brand).publish_state(root["items"][0]["brand"].as<std::string>());
