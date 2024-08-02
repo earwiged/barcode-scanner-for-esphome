@@ -34,11 +34,11 @@ esphome:
       - lambda: id(last_ean).publish_state("Scan Barcode");
 
 dashboard_import:
-  package_import_url: github://earwiged/barcode-scanner-for-esphome/barcode.yaml@main
+  package_import_url: github://SmartHome-yourself/barcode-scanner-for-esphome/barcode.yaml@main
   import_full_config: false
 
 ota:
-  - platform: esphome
+  password: "password"
 
 api:
   services:
@@ -53,7 +53,7 @@ api:
 wifi:
   ap:
     password: "12345678"
-
+    
 improv_serial:
 
 captive_portal:
@@ -124,7 +124,6 @@ font:
     size: 18
   - file: "gfonts://Roboto"
     id: roboto_20
-    size: 20
     glyphs:  |
       ß!?"%()+*=,-_.:°ø0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZÄÜÖ abcdefghijklmnopqrstuvwxyzäüö€@<>/
   
@@ -180,7 +179,6 @@ http_request:
   useragent: esphome/barcodescanner
   timeout: 10s
   id: http_request_data
-  verify_ssl: false
   
 script:
   - id: request_ean
@@ -250,14 +248,33 @@ script:
       ean: std::string
     then:
       - http_request.get:
+          verify_ssl: false
           url: !lambda |-
                   return (std::string) "https://api.upcitemdb.com/prod/trial/lookup?upc=" + ean;
           on_response:
             then:
               - lambda: |-
-                  ESP_LOGD("upcitemdb", "Response: %s\n", id(http_request_data).get_string());
-                  json::parse_json(id(http_request_data).get_string(), [](JsonObject root) {
-                    std::string jsonStr;
-                    id(last_brand).publish_state(root["items"][0]["brand"].as<std::string>());
-                    id(last_product).publish_state(root["items"][0]["title"].as<std::string>());
-                  });
+                  char *ptr;
+                  ptr = strtok((char*)id(http_request_data).get_string(), "{}[],\":");
+                  ESP_LOGD("upcitemdb", "ptr: %s\n", ptr);
+                  int i = 0;
+                  char *brand_line = NULL;
+                  char *title_line = NULL;
+                  while(ptr != NULL) {
+                    if(i == 7){
+                      brand_line = ptr;
+                    }
+                    if(i == 15){
+                      title_line = ptr;
+                    }                    
+                    ptr = strtok(NULL, "{}[],\":");
+                    i++;
+                  }
+                  ESP_LOGD("upcitemdb", "Brand: %s\n", brand_line);
+                  ESP_LOGD("upcitemdb", "Title: %s\n", title_line);
+                  if(brand_line != NULL) {
+                    id(last_brand).publish_state(brand_line);
+                  }
+                  if(title_line != NULL) {
+                    id(last_product).publish_state(title_line);
+                  }
