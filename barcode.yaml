@@ -19,10 +19,6 @@ substitutions:
 esp32:
   board: wemos_d1_mini32
 
-# ----------------------------------
-# ----       CONFIG END         ----
-# ----------------------------------
-
 esphome:
   name: "${name}"
   name_add_mac_suffix: true
@@ -39,7 +35,6 @@ dashboard_import:
 
 ota:
   password: "password"
-  
 
 api:
   services:
@@ -61,8 +56,6 @@ captive_portal:
 
 logger:
   hardware_uart: UART0
-
-# ---------------------------------------------
 
 globals:
   - id: xpos_ean
@@ -99,7 +92,6 @@ text_sensor:
     id: last_product
     name: "${friendly_name} Product"
 
-
 uart:
   id: uart_bus
   baud_rate: 9600
@@ -118,7 +110,6 @@ uart:
             std::string s(bytes.begin(), bytes.end());
             return s;
 
-
 font:
   - file: "gfonts://Roboto"
     id: roboto_18
@@ -128,7 +119,7 @@ font:
     size: 20
     glyphs:  |
       ß!?"%()+*=,-_.:°ø0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZÄÜÖ abcdefghijklmnopqrstuvwxyzäüö€@<>/
-  
+
 i2c:
   sda: "${display_i2c_sda}"
   scl: "${display_i2c_scl}"
@@ -236,7 +227,6 @@ script:
       - script.execute: clearProductData
       - lambda: id(last_ean).publish_state("Scan Barcode");
 
-
   - id: clearProductData
     mode: restart
     then: 
@@ -260,7 +250,12 @@ script:
               - lambda: |-
                   ESP_LOGD("upcitemdb", "Response: %s\n", id(http_request_data).get_string());
                   json::parse_json(id(http_request_data).get_string(), [](JsonObject root) {
-                    std::string jsonStr;
-                    id(last_brand).publish_state(root["items"][0]["brand"].as<std::string>());
-                    id(last_product).publish_state(root["items"][0]["title"].as<std::string>());
+                    if (root.containsKey("items") && root["items"].size() > 0) {
+                      JsonObject item = root["items"][0];
+                      id(last_brand).publish_state(item["brand"].as<const char*>() ?: "");
+                      id(last_product).publish_state(item["title"].as<const char*>() ?: "");
+                    } else {
+                      id(last_brand).publish_state("unknown");
+                      id(last_product).publish_state("unknown");
+                    }
                   });
