@@ -10,14 +10,18 @@ substitutions:
   ssd1306_i2c_address: "0x3C"
 
   # UART-Pins für den Barcode-Scanner
-  uart_tx_pin: GPIO09
-  uart_rx_pin: GPIO10
+  uart_tx_pin: GPIO17
+  uart_rx_pin: GPIO16
 
   # Pin des Buzzer/Beeper
-  beeper_pin: GPIO16
+  beeper_pin: GPIO23
 
 esp32:
   board: wemos_d1_mini32
+
+# ----------------------------------
+# ----       CONFIG END         ----
+# ----------------------------------
 
 esphome:
   name: "${name}"
@@ -29,8 +33,13 @@ esphome:
     then:
       - lambda: id(last_ean).publish_state("Scan Barcode");
 
+dashboard_import:
+  package_import_url: github://earwiged/barcode-scanner-for-esphome/barcode.yaml@main
+  import_full_config: false
+
 ota:
   password: "password"
+  
 
 api:
   services:
@@ -52,6 +61,8 @@ captive_portal:
 
 logger:
   hardware_uart: UART0
+
+# ---------------------------------------------
 
 globals:
   - id: xpos_ean
@@ -88,6 +99,7 @@ text_sensor:
     id: last_product
     name: "${friendly_name} Product"
 
+
 uart:
   id: uart_bus
   baud_rate: 9600
@@ -106,6 +118,7 @@ uart:
             std::string s(bytes.begin(), bytes.end());
             return s;
 
+
 font:
   - file: "gfonts://Roboto"
     id: roboto_18
@@ -115,7 +128,7 @@ font:
     size: 20
     glyphs:  |
       ß!?"%()+*=,-_.:°ø0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZÄÜÖ abcdefghijklmnopqrstuvwxyzäüö€@<>/
-
+  
 i2c:
   sda: "${display_i2c_sda}"
   scl: "${display_i2c_scl}"
@@ -156,7 +169,7 @@ display:
         id(xpos_prod) -= 10;
       } else {
         id(xpos_prod) = 0;
-        }
+      }
 
 switch:
   - platform: gpio
@@ -203,25 +216,22 @@ script:
 
       - if:
           condition:
-            or:
-              - text_sensor.state:
-                  id: last_product
-                  state: 'null'
-              - text_sensor.state:
-                  id: last_product
-                  state: ''
+            text_sensor.state:
+              id: last_product
+              state: 'null'
           then:
-            - switch.turn_on: beeper
-            - delay: 800ms
-            - switch.turn_off: beeper
+              - switch.turn_on: beeper
+              - delay: 800ms
+              - switch.turn_off: beeper
           else:
-            - switch.turn_on: beeper
-            - delay: 50ms
-            - switch.turn_off: beeper
+              - switch.turn_on: beeper
+              - delay: 50ms
+              - switch.turn_off: beeper
 
       - delay: 10s
       - script.execute: clearProductData
       - lambda: id(last_ean).publish_state("Scan Barcode");
+
 
   - id: clearProductData
     mode: restart
@@ -246,12 +256,7 @@ script:
               - lambda: |-
                   ESP_LOGD("upcitemdb", "Response: %s\n", id(http_request_data).get_string());
                   json::parse_json(id(http_request_data).get_string(), [](JsonObject root) {
-                    if (root.containsKey("items") && root["items"].size() > 0) {
-                      JsonObject item = root["items"][0];
-                      id(last_brand).publish_state(item["brand"].as<const char*>() ?: "");
-                      id(last_product).publish_state(item["title"].as<const char*>() ?: "");
-                    } else {
-                      id(last_brand).publish_state("unknown");
-                      id(last_product).publish_state("unknown");
-                    }
+                    std::string jsonStr;
+                    id(last_brand).publish_state(root["items"][0]["brand"].as<std::string>());
+                    id(last_product).publish_state(root["items"][0]["title"].as<std::string>());
                   });
