@@ -10,11 +10,11 @@ substitutions:
   ssd1306_i2c_address: "0x3C"
 
   # UART-Pins für den Barcode-Scanner
-  uart_tx_pin: GPIO17
-  uart_rx_pin: GPIO16
+  uart_tx_pin: GPIO09
+  uart_rx_pin: GPIO10
 
   # Pin des Buzzer/Beeper
-  beeper_pin: GPIO23
+  beeper_pin: GPIO16
 
 esp32:
   board: wemos_d1_mini32
