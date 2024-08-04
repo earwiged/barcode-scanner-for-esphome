@@ -38,6 +38,7 @@ dashboard_import:
   import_full_config: false
 
 ota:
+  
 
 api:
   services:
@@ -179,6 +180,7 @@ http_request:
   useragent: esphome/barcodescanner
   timeout: 10s
   id: http_request_data
+  verify_ssl: false
   
 script:
   - id: request_ean
@@ -244,7 +246,6 @@ script:
       ean: std::string
     then:
       - http_request.get:
-          verify_ssl: false
           headers:
             Content-Type: application/json
           url: !lambda |-
