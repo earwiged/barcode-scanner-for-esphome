@@ -38,8 +38,6 @@ dashboard_import:
   import_full_config: false
 
 ota:
-  password: "password"
-  
 
 api:
   services:
