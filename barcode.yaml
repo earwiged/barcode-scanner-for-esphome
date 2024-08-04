@@ -38,8 +38,8 @@ dashboard_import:
   import_full_config: false
 
 ota:
+  platform: esphome
   
-
 api:
   services:
     - service: request_ean
