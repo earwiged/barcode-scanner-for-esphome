@@ -15,7 +15,7 @@ substitutions:
 
   # Pin des Buzzer/Beeper
   beeper_pin: GPIO16
-
+  
 esp32:
   board: wemos_d1_mini32
 
@@ -38,8 +38,8 @@ dashboard_import:
   import_full_config: false
 
 ota:
-  platform: esphome
-  
+  - platform: esphome
+
 api:
   services:
     - service: request_ean
@@ -73,6 +73,10 @@ globals:
   - id: xpos_prod
     type: int
     initial_value: "0"
+
+  - id: http_response
+    type: std::string
+    initial_value: ""
 
 text_sensor:
   - platform: template
@@ -248,14 +252,38 @@ script:
       - http_request.get:
           headers:
             Content-Type: application/json
-          url: !lambda |-
-                  return (std::string) "https://api.upcitemdb.com/prod/trial/lookup?upc=" + ean;
+          url: !lambda "return \"https://api.upcitemdb.com/prod/trial/lookup?upc=\" + ean;"
+          capture_response: true
           on_response:
             then:
               - lambda: |-
-                  ESP_LOGD("upcitemdb", "Response: %s\n", id(http_request_data).get_string());
-                  json::parse_json(id(http_request_data).get_string(), [](JsonObject root) {
-                    std::string jsonStr;
-                    id(last_brand).publish_state(root["items"][0]["brand"].as<std::string>());
-                    id(last_product).publish_state(root["items"][0]["title"].as<std::string>());
-                  });
+                  // Accumulate response
+                  id(http_response) += body;
+                  ESP_LOGD("upcitemdb", "Accumulated Response length: %d\n", id(http_response).length());
+
+  - id: processHttpResponse
+    mode: queued
+    then:
+      - lambda: |-
+          std::string &body = id(http_response);
+          ESP_LOGD("upcitemdb", "Final Response: %s\n", body.c_str());
+          // Add check for empty or invalid JSON response
+          if (body.empty()) {
+            ESP_LOGE("upcitemdb", "Empty response body");
+            return;
+          }
+          // Parse JSON and handle errors
+          bool parse_success = json::parse_json(body, [](JsonObject root) -> bool {
+              if (!root.containsKey("items")) {
+                  ESP_LOGE("upcitemdb", "No items key in JSON");
+                  return false;
+              }
+              id(last_brand).publish_state(root["items"][0]["brand"].as<std::string>());
+              id(last_product).publish_state(root["items"][0]["title"].as<std::string>());
+              return true;
+          });
+          if (!parse_success) {
+              ESP_LOGE("upcitemdb", "Failed to parse JSON");
+          }
+          // Clear the response after processing
+          id(http_response) = "";
