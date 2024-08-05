@@ -213,10 +213,26 @@ script:
           ESP_LOGD("getEanData", "Scanned EAN: %s\n", ean);
       - lambda: id(last_ean).publish_state(ean);
       - script.execute: 
-          id: refreshProductNameUPCItemDB
+          id: refreshProductNameOpenfoodfacts
           ean: !lambda return ean.c_str();
       - lambda: |-
-          ESP_LOGD("getEanData", "UPCItemDB result: %s\n", id(last_product).state.c_str());
+          ESP_LOGD("getEanData", "Openfoodfacts result: %s\n", id(last_product).state.c_str());
+      - delay: 500ms
+      - if:
+          condition:
+            or:
+              - text_sensor.state:
+                  id: last_product
+                  state: 'null'
+              - text_sensor.state:
+                  id: last_product
+                  state: ''
+          then:
+            - script.execute: 
+                id: refreshProductNameOpenTin
+                ean: !lambda return ean.c_str();
+            - lambda: |-
+                ESP_LOGD("getEanData", "OpenTinDb result: %s\n", id(last_product).state.c_str());
 
       - if:
           condition:
@@ -244,46 +260,84 @@ script:
       - lambda: id(last_brand).publish_state("");
       - lambda: id(last_product).publish_state("");
       
-  - id: refreshProductNameUPCItemDB
+  - id: refreshProductNameOpenTin
     mode: restart
     parameters:
       ean: std::string
     then:
       - http_request.get:
-          headers:
-            Content-Type: application/json
-          url: !lambda "return \"https://api.upcitemdb.com/prod/trial/lookup?upc=\" + ean;"
-          capture_response: true
+          verify_ssl: false
+          url: !lambda |-
+                  return (std::string) "https://opengtindb.org/?ean=" + ean + "&cmd=query&queryid=${rest_opentindb_queryid}";
           on_response:
             then:
               - lambda: |-
-                  // Accumulate response
-                  id(http_response) += body;
-                  ESP_LOGD("upcitemdb", "Accumulated Response length: %d\n", id(http_response).length());
+                  char delimiter[] = "\n";
+                  char *ptr;
+                  ptr = strtok((char*)id(http_request_data).get_string(), delimiter);
+                  ESP_LOGD("opengtin", "ptr: %s\n", ptr);
+                  int i = 0;
+                  char *name_line = NULL;
+                  char *vendor_line = NULL;
+                  while(ptr != NULL) {
+                    if(i == 4){
+                      name_line = ptr;
+                    }
+                    if(i == 5){
+                      vendor_line = ptr;
+                    }                    
+                    ptr = strtok(NULL, delimiter);
+                    i++;
+                  }
+                  ptr = strtok(name_line, {"="});
+                  i=0;
+                  while(ptr != NULL) {
+                    if(i == 1){
+                      ESP_LOGD("opengtin", "Name: %s\n", ptr);
+                      id(last_product).publish_state(ptr);
+                    }                    
+                    ptr = strtok(NULL, delimiter);
+                    i++;
+                  }
+                  ptr = strtok(vendor_line, {"="});
+                  i=0;
+                  while(ptr != NULL) {
+                    if(i == 1){
+                      ESP_LOGD("opengtin", "Firma: %s\n", ptr);
+                      id(last_brand).publish_state(ptr);
+                    }                    
+                    ptr = strtok(NULL, delimiter);
+                    i++;
+                  }
 
-  - id: processHttpResponse
-    mode: queued
+  - id: refreshProductNameOpenfoodfacts
+    mode: restart
+    parameters:
+      ean: std::string
     then:
-      - lambda: |-
-          std::string &body = id(http_response);
-          ESP_LOGD("upcitemdb", "Final Response: %s\n", body.c_str());
-          // Add check for empty or invalid JSON response
-          if (body.empty()) {
-            ESP_LOGE("upcitemdb", "Empty response body");
-            return;
-          }
-          // Parse JSON and handle errors
-          bool parse_success = json::parse_json(body, [](JsonObject root) -> bool {
-              if (!root.containsKey("items")) {
-                  ESP_LOGE("upcitemdb", "No items key in JSON");
-                  return false;
-              }
-              id(last_brand).publish_state(root["items"][0]["brand"].as<std::string>());
-              id(last_product).publish_state(root["items"][0]["title"].as<std::string>());
-              return true;
-          });
-          if (!parse_success) {
-              ESP_LOGE("upcitemdb", "Failed to parse JSON");
-          }
-          // Clear the response after processing
-          id(http_response) = "";
+      - http_request.get:
+          verify_ssl: false
+          headers:
+            Content-Type: application/json          
+          url: !lambda |-      
+            std::string url = "https://world.openfoodfacts.org/api/v2/product/" + ean + "?fields=brands,product_name,code";
+            ESP_LOGD("openFood", "API: %s\n", url.c_str());
+            return url;
+
+          on_response:
+            then:
+              - if:
+                  condition:
+                     lambda: |-
+                        return status_code == 200;
+                  then:              
+                    - lambda: |-
+                        char *ptr;
+                        ptr = (char*)id(http_request_data).get_string();
+                        ESP_LOGD("custom", "ptr: %s\n", ptr);
+                        json::parse_json(ptr, [](JsonObject root) {
+                          std::string jsonStr;
+                          id(last_brand).publish_state(root["product"]["brands"]);
+                          id(last_product).publish_state(root["product"]["product_name"]);
+                        });
+                  
