@@ -222,7 +222,6 @@ script:
       ean: std::string
     then:
       - http_request.get:
-          verify_ssl: false
           headers:
             Content-Type: application/json          
           url: !lambda |-      
