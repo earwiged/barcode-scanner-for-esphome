@@ -222,6 +222,7 @@ script:
       ean: std::string
     then:
       - http_request.get:
+          verify_ssl: false
           headers:
             Content-Type: application/json          
           url: !lambda |-      
@@ -231,17 +232,11 @@ script:
 
           on_response:
             then:
-              - if:
-                  condition:
-                     lambda: |-
-                        return status_code == 200;
-                  then:              
-                    - lambda: |-
-                        char *ptr;
-                        ptr = (char*)id(http_request_data).get_string();
-                        ESP_LOGD("custom", "ptr: %s\n", ptr);
-                        json::parse_json(ptr, [](JsonObject root) {
-                          std::string jsonStr;
-                          id(last_brand).publish_state(root["product"]["brands"]);
-                          id(last_product).publish_state(root["product"]["product_name"]);
-                        });
+              - lambda: |-
+                  auto json = id(http_request_data).get_json();
+                  if (json.is_null()) {
+                    ESP_LOGE("OpenFoodFacts", "Failed to parse JSON response");
+                    return;
+                  }
+                  id(last_brand).publish_state(json["product"]["brands"].as<std::string>());
+                  id(last_product).publish_state(json["product"]["product_name"].as<std::string>());
