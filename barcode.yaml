@@ -128,7 +128,7 @@ font:
     id: roboto_20
     size: 20
     glyphs:  |
-      ß!?"%()+*=,-_.:°ø0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZÄÜÖ abcdefghijklmnopqrstuvwxyzäüö€@<>/
+      ß$!?"%()+*=,-_.:°ø0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZÄÜÖ abcdefghijklmnopqrstuvwxyzäüö€@<>/
 
 i2c:
   sda: "${display_i2c_sda}"
