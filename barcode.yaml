@@ -2,18 +2,29 @@ substitutions:
   name: "barcode-scanner"
   friendly_name: "Barcode Scanner"
 
+  # Query ID für opentindb (https://opengtindb.org/api.php)
+  rest_opentindb_queryid: "400000000"
+
+  # I2C-Pins fürs Display
   display_i2c_sda: GPIO21
   display_i2c_scl: GPIO22
 
+  # I2C-Adresse des OLED Displays
   ssd1306_i2c_address: "0x3C"
 
+  # UART-Pins für den Barcode-Scanner
   uart_tx_pin: GPIO09
   uart_rx_pin: GPIO10
 
+  # Pin des Buzzer/Beeper
   beeper_pin: GPIO16
-  
+
 esp32:
   board: wemos_d1_mini32
+
+# ----------------------------------
+# ----       CONFIG END         ----
+# ----------------------------------
 
 esphome:
   name: "${name}"
@@ -30,7 +41,6 @@ dashboard_import:
   import_full_config: false
 
 ota:
-  - platform: esphome
 
 api:
   services:
@@ -45,13 +55,15 @@ api:
 wifi:
   ap:
     password: "12345678"
-
+    
 improv_serial:
 
 captive_portal:
 
 logger:
   hardware_uart: UART0
+
+# ---------------------------------------------
 
 globals:
   - id: xpos_ean
@@ -63,10 +75,6 @@ globals:
   - id: xpos_prod
     type: int
     initial_value: "0"
-
-  - id: http_response
-    type: std::string
-    initial_value: ""
 
 text_sensor:
   - platform: template
@@ -92,6 +100,7 @@ text_sensor:
     id: last_product
     name: "${friendly_name} Product"
 
+
 uart:
   id: uart_bus
   baud_rate: 9600
@@ -109,6 +118,7 @@ uart:
           state: !lambda |
             std::string s(bytes.begin(), bytes.end());
             return s;
+
 
 font:
   - file: "gfonts://Roboto"
@@ -172,7 +182,6 @@ http_request:
   useragent: esphome/barcodescanner
   timeout: 10s
   id: http_request_data
-  verify_ssl: false
   
 script:
   - id: request_ean
@@ -205,9 +214,41 @@ script:
           ean: !lambda return ean.c_str();
       - lambda: |-
           ESP_LOGD("getEanData", "Openfoodfacts result: %s\n", id(last_product).state.c_str());
+      - delay: 500ms
+      - if:
+          condition:
+            or:
+              - text_sensor.state:
+                  id: last_product
+                  state: 'null'
+              - text_sensor.state:
+                  id: last_product
+                  state: ''
+          then:
+            - script.execute: 
+                id: refreshProductNameOpenTin
+                ean: !lambda return ean.c_str();
+            - lambda: |-
+                ESP_LOGD("getEanData", "OpenTinDb result: %s\n", id(last_product).state.c_str());
+
+      - if:
+          condition:
+            text_sensor.state:
+              id: last_product
+              state: 'null'
+          then:
+              - switch.turn_on: beeper
+              - delay: 800ms
+              - switch.turn_off: beeper
+          else:
+              - switch.turn_on: beeper
+              - delay: 50ms
+              - switch.turn_off: beeper
+
       - delay: 10s
       - script.execute: clearProductData
       - lambda: id(last_ean).publish_state("Scan Barcode");
+
 
   - id: clearProductData
     mode: restart
@@ -216,6 +257,56 @@ script:
       - lambda: id(last_brand).publish_state("");
       - lambda: id(last_product).publish_state("");
       
+  - id: refreshProductNameOpenTin
+    mode: restart
+    parameters:
+      ean: std::string
+    then:
+      - http_request.get:
+          verify_ssl: false
+          url: !lambda |-
+                  return (std::string) "https://opengtindb.org/?ean=" + ean + "&cmd=query&queryid=${rest_opentindb_queryid}";
+          on_response:
+            then:
+              - lambda: |-
+                  char delimiter[] = "\n";
+                  char *ptr;
+                  ptr = strtok((char*)id(http_request_data).get_string(), delimiter);
+                  ESP_LOGD("opengtin", "ptr: %s\n", ptr);
+                  int i = 0;
+                  char *name_line = NULL;
+                  char *vendor_line = NULL;
+                  while(ptr != NULL) {
+                    if(i == 4){
+                      name_line = ptr;
+                    }
+                    if(i == 5){
+                      vendor_line = ptr;
+                    }                    
+                    ptr = strtok(NULL, delimiter);
+                    i++;
+                  }
+                  ptr = strtok(name_line, {"="});
+                  i=0;
+                  while(ptr != NULL) {
+                    if(i == 1){
+                      ESP_LOGD("opengtin", "Name: %s\n", ptr);
+                      id(last_product).publish_state(ptr);
+                    }                    
+                    ptr = strtok(NULL, delimiter);
+                    i++;
+                  }
+                  ptr = strtok(vendor_line, {"="});
+                  i=0;
+                  while(ptr != NULL) {
+                    if(i == 1){
+                      ESP_LOGD("opengtin", "Firma: %s\n", ptr);
+                      id(last_brand).publish_state(ptr);
+                    }                    
+                    ptr = strtok(NULL, delimiter);
+                    i++;
+                  }
+
   - id: refreshProductNameOpenfoodfacts
     mode: restart
     parameters:
@@ -232,11 +323,18 @@ script:
 
           on_response:
             then:
-              - lambda: |-
-                  auto json = id(http_request_data).get_json();
-                  if (json.is_null()) {
-                    ESP_LOGE("OpenFoodFacts", "Failed to parse JSON response");
-                    return;
-                  }
-                  id(last_brand).publish_state(json["product"]["brands"].as<std::string>());
-                  id(last_product).publish_state(json["product"]["product_name"].as<std::string>());
+              - if:
+                  condition:
+                     lambda: |-
+                        return status_code == 200;
+                  then:              
+                    - lambda: |-
+                        char *ptr;
+                        ptr = (char*)id(http_request_data).get_string();
+                        ESP_LOGD("custom", "ptr: %s\n", ptr);
+                        json::parse_json(ptr, [](JsonObject root) {
+                          std::string jsonStr;
+                          id(last_brand).publish_state(root["product"]["brands"]);
+                          id(last_product).publish_state(root["product"]["product_name"]);
+                        });
+                  
